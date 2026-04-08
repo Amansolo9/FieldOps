@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -38,12 +40,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * These prove that invalid DTO payloads are rejected with 400,
  * independently of role/auth behavior.
  */
-@WebMvcTest(controllers = {
+@WebMvcTest(
+    controllers = {
         OrderController.class,
         RatingController.class,
         CommunityController.class,
         SupportTicketController.class
-})
+    },
+    excludeFilters = @ComponentScan.Filter(
+        type = FilterType.ASSIGNABLE_TYPE,
+        classes = {
+            com.eaglepoint.storehub.security.JwtAuthenticationFilter.class,
+            com.eaglepoint.storehub.config.RateLimitFilter.class,
+            com.eaglepoint.storehub.config.IdempotencyFilter.class
+        }
+    )
+)
 @Import({PayloadValidationTest.TestSecurityConfig.class, GlobalExceptionHandler.class})
 @TestPropertySource(properties = {
         "app.security.recent-auth-window-ms=600000"

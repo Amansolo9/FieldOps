@@ -105,7 +105,7 @@ class CheckInServiceTest {
                 .thenReturn(Optional.of(buildShift(LocalTime.now())));
         when(deviceBindingRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Collections.emptyList());
         when(checkInRepository.countByUserIdSince(eq(1L), any(Instant.class))).thenReturn(0L);
-        when(checkInRepository.countValidCheckInsSince(eq(1L), eq(1L), any(Instant.class))).thenReturn(0L);
+
         when(checkInRepository.save(any(CheckIn.class))).thenAnswer(invocation -> {
             CheckIn c = invocation.getArgument(0);
             c.setId(100L);
@@ -134,7 +134,7 @@ class CheckInServiceTest {
                 .thenReturn(Optional.of(buildShift(LocalTime.now().plusMinutes(30))));
         when(deviceBindingRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Collections.emptyList());
         when(checkInRepository.countByUserIdSince(eq(1L), any(Instant.class))).thenReturn(0L);
-        when(checkInRepository.countValidCheckInsSince(eq(1L), eq(1L), any(Instant.class))).thenReturn(0L);
+
         when(checkInRepository.save(any(CheckIn.class))).thenAnswer(invocation -> {
             CheckIn c = invocation.getArgument(0);
             c.setId(101L);
@@ -161,7 +161,7 @@ class CheckInServiceTest {
                 .thenReturn(Optional.of(buildShift(LocalTime.now().minusMinutes(30))));
         when(deviceBindingRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Collections.emptyList());
         when(checkInRepository.countByUserIdSince(eq(1L), any(Instant.class))).thenReturn(0L);
-        when(checkInRepository.countValidCheckInsSince(eq(1L), eq(1L), any(Instant.class))).thenReturn(0L);
+
         when(checkInRepository.save(any(CheckIn.class))).thenAnswer(invocation -> {
             CheckIn c = invocation.getArgument(0);
             c.setId(102L);
@@ -189,7 +189,7 @@ class CheckInServiceTest {
                 .thenReturn(Optional.of(buildShift(LocalTime.now())));
         // 4 previous attempts + 1 current = 5 total → does NOT exceed 5
         when(checkInRepository.countByUserIdSince(eq(1L), any(Instant.class))).thenReturn(4L);
-        when(checkInRepository.countValidCheckInsSince(eq(1L), eq(1L), any(Instant.class))).thenReturn(0L);
+
         when(deviceBindingRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Collections.emptyList());
         when(checkInRepository.save(any(CheckIn.class))).thenAnswer(invocation -> {
             CheckIn c = invocation.getArgument(0);
@@ -246,7 +246,7 @@ class CheckInServiceTest {
         when(shiftAssignmentRepository.findActiveShift(eq(1L), eq(1L), any(LocalDate.class)))
                 .thenReturn(Optional.of(buildShift(LocalTime.now())));
         when(checkInRepository.countByUserIdSince(eq(1L), any(Instant.class))).thenReturn(0L);
-        when(checkInRepository.countValidCheckInsSince(eq(1L), eq(1L), any(Instant.class))).thenReturn(0L);
+
         // User has a known device binding that does NOT match the new fingerprint
         DeviceBinding existingBinding = DeviceBinding.builder()
                 .id(1L).user(testUser).deviceHash("old-device-fp").active(true).build();

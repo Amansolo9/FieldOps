@@ -70,7 +70,7 @@ describe('ReauthService', () => {
 
       expect(authSpy.reauthenticate).toHaveBeenCalledWith('mypassword');
       expect(service.dialogVisible()).toBeFalse();
-      expect(result).toEqual({ success: true });
+      expect(result).toEqual({ success: true } as any);
     });
 
     it('shows error on failed re-auth without closing dialog', () => {
@@ -94,7 +94,7 @@ describe('ReauthService', () => {
       service.cancel();
 
       expect(service.dialogVisible()).toBeFalse();
-      expect(result).toEqual({ success: false });
+      expect(result).toEqual({ success: false } as any);
     });
   });
 });

@@ -21,6 +21,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -99,14 +100,9 @@ class HttpAuthorizationMatrixTest {
     @Test
     void managerAtSiteA_deniedSiteBAccess() {
         setPrincipal(1L, Role.SITE_MANAGER, 10L);
-        when(siteAuth.canAccessSite(20L)).thenReturn(false); // This won't work with real instance
-        // Use the real service directly
-        SiteAuthorizationService realAuth = new SiteAuthorizationService(
-                mock(com.eaglepoint.storehub.repository.OrganizationRepository.class));
-        setPrincipal(1L, Role.SITE_MANAGER, 10L);
         // SITE_MANAGER for site 10 tries to access site 20 — needs child site lookup
         var orgRepo = mock(com.eaglepoint.storehub.repository.OrganizationRepository.class);
-        when(orgRepo.findAllSiteIdsUnder(10L)).thenReturn(java.util.List.of(10L));
+        when(orgRepo.findAllSiteIdsUnder(10L)).thenReturn(List.of(10L));
         SiteAuthorizationService scopedAuth = new SiteAuthorizationService(orgRepo);
         assertFalse(scopedAuth.canAccessSite(20L));
     }

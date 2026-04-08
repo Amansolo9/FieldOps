@@ -97,6 +97,9 @@ class RatingServiceTest {
         request.setRatedUserId(2L);
         request.setTargetType(RatingTarget.STAFF);
         request.setStars(5);
+        request.setTimelinessScore(5);
+        request.setCommunicationScore(5);
+        request.setAccuracyScore(5);
         request.setComment("Excellent service!");
         return request;
     }

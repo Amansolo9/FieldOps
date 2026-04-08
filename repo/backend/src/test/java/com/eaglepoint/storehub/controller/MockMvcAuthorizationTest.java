@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -65,7 +67,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * | DELETE /api/users/{id}            | 401      | 403      | 403   | 403      | 200       |
  * +------------------------------------+----------+----------+-------+----------+-----------+
  */
-@WebMvcTest(controllers = {
+@WebMvcTest(
+    controllers = {
         OrderController.class,
         CheckInController.class,
         SupportTicketController.class,
@@ -77,7 +80,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         CreditScoreController.class,
         AnalyticsController.class,
         AddressController.class
-})
+    },
+    excludeFilters = @ComponentScan.Filter(
+        type = FilterType.ASSIGNABLE_TYPE,
+        classes = {
+            com.eaglepoint.storehub.security.JwtAuthenticationFilter.class,
+            com.eaglepoint.storehub.config.RateLimitFilter.class,
+            com.eaglepoint.storehub.config.IdempotencyFilter.class
+        }
+    )
+)
 @Import({MockMvcAuthorizationTest.TestSecurityConfig.class, GlobalExceptionHandler.class})
 @TestPropertySource(properties = {
         "app.security.recent-auth-window-ms=600000"
@@ -95,6 +107,7 @@ class MockMvcAuthorizationTest {
             http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) -> response.sendError(401)))
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/api/auth/**").permitAll()
                     .requestMatchers("/api/admin/**").hasRole("ENTERPRISE_ADMIN")

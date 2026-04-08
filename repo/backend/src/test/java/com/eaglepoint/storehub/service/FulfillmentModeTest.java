@@ -43,6 +43,15 @@ class FulfillmentModeTest {
     private DeliveryZoneRepository deliveryZoneRepository;
 
     @Mock
+    private com.eaglepoint.storehub.repository.DeliveryZoneGroupRepository deliveryZoneGroupRepository;
+
+    @Mock
+    private DeliveryZoneGroupService deliveryZoneGroupService;
+
+    @Mock
+    private com.eaglepoint.storehub.repository.PickupRedemptionLogRepository pickupRedemptionLogRepository;
+
+    @Mock
     private SiteAuthorizationService siteAuth;
 
     @InjectMocks
@@ -140,17 +149,8 @@ class FulfillmentModeTest {
         request.setDeliveryZip("12345");
         request.setCourierNotes("Leave at front desk, ask for badge #42");
 
-        DeliveryZone zone = DeliveryZone.builder()
-                .id(1L)
-                .site(testSite)
-                .zipCode("12345")
-                .distanceMiles(3.0)
-                .deliveryFee(null)
-                .active(true)
-                .build();
-
-        when(deliveryZoneRepository.findBySiteIdAndZipCode(1L, "12345"))
-                .thenReturn(Optional.of(zone));
+        when(deliveryZoneGroupService.resolveDeliveryFee(1L, "12345"))
+                .thenReturn(new DeliveryZoneGroupService.FeeResult(new BigDecimal("4.99"), 3.0));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
             Order o = invocation.getArgument(0);
             o.setId(2L);

@@ -92,9 +92,8 @@ class IdempotencyFilterTest {
 
         // Simulate controller writing a 200 response
         doAnswer(inv -> {
-            MockHttpServletResponse resp = (MockHttpServletResponse) inv.getArguments()[1];
-            // The filter wraps response, but we can't directly access the wrapper here.
-            // The wrapped response's status is set by the controller.
+            jakarta.servlet.http.HttpServletResponse resp = (jakarta.servlet.http.HttpServletResponse) inv.getArguments()[1];
+            resp.setStatus(200);
             return null;
         }).when(filterChain).doFilter(eq(request), any());
 

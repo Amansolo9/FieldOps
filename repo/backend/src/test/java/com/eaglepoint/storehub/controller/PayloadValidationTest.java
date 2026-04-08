@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.bean.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -64,20 +64,20 @@ class PayloadValidationTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockBean private OrderService orderService;
-    @MockBean private ShippingLabelService shippingLabelService;
-    @MockBean private SiteAuthorizationService siteAuth;
-    @MockBean private RatingService ratingService;
-    @MockBean private CommunityService communityService;
-    @MockBean private GamificationService gamificationService;
-    @MockBean private FavoriteService favoriteService;
-    @MockBean private UserFollowService userFollowService;
-    @MockBean private SupportTicketService ticketService;
-    @MockBean private EvidenceService evidenceService;
-    @MockBean private UserRepository userRepository;
-    @MockBean private OrderRepository orderRepository;
-    @MockBean private SupportTicketRepository supportTicketRepository;
-    @MockBean private CheckInRepository checkInRepository;
+    @MockitoBean private OrderService orderService;
+    @MockitoBean private ShippingLabelService shippingLabelService;
+    @MockitoBean private SiteAuthorizationService siteAuth;
+    @MockitoBean private RatingService ratingService;
+    @MockitoBean private CommunityService communityService;
+    @MockitoBean private GamificationService gamificationService;
+    @MockitoBean private FavoriteService favoriteService;
+    @MockitoBean private UserFollowService userFollowService;
+    @MockitoBean private SupportTicketService ticketService;
+    @MockitoBean private EvidenceService evidenceService;
+    @MockitoBean private UserRepository userRepository;
+    @MockitoBean private OrderRepository orderRepository;
+    @MockitoBean private SupportTicketRepository supportTicketRepository;
+    @MockitoBean private CheckInRepository checkInRepository;
 
     @Nested
     @DisplayName("Rating payload validation")

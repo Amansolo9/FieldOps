@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.bean.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
@@ -110,32 +110,32 @@ class MockMvcAuthorizationTest {
     private MockMvc mockMvc;
 
     // ─── Service mocks ───
-    @MockBean private OrderService orderService;
-    @MockBean private ShippingLabelService shippingLabelService;
-    @MockBean private SiteAuthorizationService siteAuth;
-    @MockBean private CheckInService checkInService;
-    @MockBean private SupportTicketService ticketService;
-    @MockBean private EvidenceService evidenceService;
-    @MockBean private RatingService ratingService;
-    @MockBean private UserService userService;
-    @MockBean private AuthService authService;
-    @MockBean private AuditService auditService;
-    @MockBean private IncentiveRuleService incentiveRuleService;
-    @MockBean private CommunityService communityService;
-    @MockBean private GamificationService gamificationService;
-    @MockBean private FavoriteService favoriteService;
-    @MockBean private UserFollowService userFollowService;
-    @MockBean private CreditScoreService creditScoreService;
-    @MockBean private AnalyticsService analyticsService;
-    @MockBean private ExperimentService experimentService;
-    @MockBean private AddressService addressService;
-    @MockBean private OrganizationService organizationService;
+    @MockitoBean private OrderService orderService;
+    @MockitoBean private ShippingLabelService shippingLabelService;
+    @MockitoBean private SiteAuthorizationService siteAuth;
+    @MockitoBean private CheckInService checkInService;
+    @MockitoBean private SupportTicketService ticketService;
+    @MockitoBean private EvidenceService evidenceService;
+    @MockitoBean private RatingService ratingService;
+    @MockitoBean private UserService userService;
+    @MockitoBean private AuthService authService;
+    @MockitoBean private AuditService auditService;
+    @MockitoBean private IncentiveRuleService incentiveRuleService;
+    @MockitoBean private CommunityService communityService;
+    @MockitoBean private GamificationService gamificationService;
+    @MockitoBean private FavoriteService favoriteService;
+    @MockitoBean private UserFollowService userFollowService;
+    @MockitoBean private CreditScoreService creditScoreService;
+    @MockitoBean private AnalyticsService analyticsService;
+    @MockitoBean private ExperimentService experimentService;
+    @MockitoBean private AddressService addressService;
+    @MockitoBean private OrganizationService organizationService;
 
     // ─── Repository mocks (needed by some controllers directly) ───
-    @MockBean private UserRepository userRepository;
-    @MockBean private OrderRepository orderRepository;
-    @MockBean private SupportTicketRepository supportTicketRepository;
-    @MockBean private CheckInRepository checkInRepository;
+    @MockitoBean private UserRepository userRepository;
+    @MockitoBean private OrderRepository orderRepository;
+    @MockitoBean private SupportTicketRepository supportTicketRepository;
+    @MockitoBean private CheckInRepository checkInRepository;
 
     // ════════════════════════════════════════════════════════════════
     //  UNAUTHENTICATED → 401

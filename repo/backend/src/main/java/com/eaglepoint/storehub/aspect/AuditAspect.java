@@ -111,7 +111,7 @@ public class AuditAspect {
         return null;
     }
 
-    String sanitize(String json) {
+    public String sanitize(String json) {
         if (json == null) return null;
         return json
                 .replaceAll("\"(password|passwordHash|secret|aesKey|jwtSecret|token|" +

@@ -40,7 +40,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     );
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+    public void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String idempotencyKey = request.getHeader("X-Idempotency-Key");
 

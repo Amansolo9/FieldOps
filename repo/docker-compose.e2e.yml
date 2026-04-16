@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: storehub
+      POSTGRES_USER: storehub
+      POSTGRES_PASSWORD: storehub
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U storehub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      DB_HOST: db
+      DB_USERNAME: storehub
+      DB_PASSWORD: storehub
+      JWT_SECRET: bG9jYWxkZXZlbG9wbWVudG9ubHlrZXlub3Rmb3Jwcm9kdWN0aW9u
+      AES_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      BOOTSTRAP_ADMIN_USERNAME: admin
+      BOOTSTRAP_ADMIN_PASSWORD: "Dev!Storehub99"
+      BOOTSTRAP_ADMIN_EMAIL: admin@storehub.local
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/auth/login -X POST -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"Dev!Storehub99\"}' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+
+  cypress:
+    image: cypress/included:13.7.0
+    working_dir: /e2e
+    environment:
+      CYPRESS_baseUrl: http://frontend:80
+    volumes:
+      - ./e2e:/e2e
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    entrypoint: ["cypress", "run", "--browser", "chrome"]

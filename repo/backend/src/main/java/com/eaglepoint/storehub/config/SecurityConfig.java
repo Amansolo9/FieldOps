@@ -48,6 +48,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ENTERPRISE_ADMIN")
                 .requestMatchers("/api/audit/**").hasAnyRole("ENTERPRISE_ADMIN", "SITE_MANAGER")
+                .requestMatchers("/api/credit-score/me").authenticated()
                 .requestMatchers("/api/credit-score/{userId}").hasAnyRole("ENTERPRISE_ADMIN", "SITE_MANAGER")
                 .anyRequest().authenticated()
             )

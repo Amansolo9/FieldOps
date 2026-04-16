@@ -83,7 +83,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         CommunityController.class,
         CreditScoreController.class,
         AnalyticsController.class,
-        AddressController.class
+        AddressController.class,
+        DeliveryZoneController.class,
+        DeliveryZoneGroupController.class,
+        OrganizationController.class,
+        AuthController.class
     },
     excludeFilters = @ComponentScan.Filter(
         type = FilterType.ASSIGNABLE_TYPE,
@@ -116,6 +120,7 @@ class MockMvcAuthorizationTest {
                     .requestMatchers("/api/auth/**").permitAll()
                     .requestMatchers("/api/admin/**").hasRole("ENTERPRISE_ADMIN")
                     .requestMatchers("/api/audit/**").hasAnyRole("ENTERPRISE_ADMIN", "SITE_MANAGER")
+                    .requestMatchers("/api/credit-score/me").authenticated()
                     .requestMatchers("/api/credit-score/{userId}").hasAnyRole("ENTERPRISE_ADMIN", "SITE_MANAGER")
                     .anyRequest().authenticated()
                 );
@@ -147,6 +152,8 @@ class MockMvcAuthorizationTest {
     @MockitoBean private ExperimentService experimentService;
     @MockitoBean private AddressService addressService;
     @MockitoBean private OrganizationService organizationService;
+    @MockitoBean private DeliveryZoneService deliveryZoneService;
+    @MockitoBean private DeliveryZoneGroupService deliveryZoneGroupService;
 
     // ─── Repository mocks (needed by some controllers directly) ───
     @MockitoBean private UserRepository userRepository;
@@ -539,6 +546,880 @@ class MockMvcAuthorizationTest {
             mockMvc.perform(get("/api/orders/site/99")
                     .with(authentication(authFor(Role.STAFF, 10L))))
                     .andExpect(status().isForbidden());
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  EXPANDED COVERAGE — previously uncovered endpoints
+    // ════════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("Analytics endpoints")
+    class AnalyticsTests {
+
+        @Test void logEvent_unauthenticated_401() throws Exception {
+            mockMvc.perform(post("/api/analytics/events")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"eventType\":\"PAGE_VIEW\",\"siteId\":1}"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test void logEvent_authenticated_200() throws Exception {
+            mockMvc.perform(post("/api/analytics/events")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"eventType\":\"PAGE_VIEW\",\"siteId\":1}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void siteMetrics_customer_403() throws Exception {
+            mockMvc.perform(get("/api/analytics/sites/1/metrics")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("start", "2024-01-01T00:00:00Z")
+                    .param("end", "2024-12-31T23:59:59Z"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void siteMetrics_siteManager_200() throws Exception {
+            when(analyticsService.getSiteMetrics(anyLong(), any(), any())).thenReturn(
+                    new SiteMetrics(1L, java.util.Map.of(), java.util.Map.of(), null, null, null, "On Time"));
+            mockMvc.perform(get("/api/analytics/sites/1/metrics")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L)))
+                    .param("start", "2024-01-01T00:00:00Z")
+                    .param("end", "2024-12-31T23:59:59Z"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void retention_customer_403() throws Exception {
+            mockMvc.perform(get("/api/analytics/sites/1/retention")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("cohortDate", "2024-01-01T00:00:00Z"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void createExperiment_customer_403() throws Exception {
+            mockMvc.perform(post("/api/analytics/experiments")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"test\",\"type\":\"AB_TEST\",\"variantCount\":2}"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void createExperiment_siteManager_200() throws Exception {
+            when(experimentService.createExperiment(any())).thenReturn(new ExperimentDto());
+            mockMvc.perform(post("/api/analytics/experiments")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"test\",\"type\":\"AB_TEST\",\"variantCount\":2}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getActiveExperiments_authenticated_200() throws Exception {
+            when(experimentService.getActiveExperiments()).thenReturn(List.of());
+            mockMvc.perform(get("/api/analytics/experiments")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getBucket_authenticated_200() throws Exception {
+            when(experimentService.getBucket(anyLong(), anyString())).thenReturn(java.util.Map.of("variant", 0));
+            mockMvc.perform(get("/api/analytics/experiments/test-exp/bucket")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void recordOutcome_authenticated_200() throws Exception {
+            mockMvc.perform(post("/api/analytics/experiments/test-exp/outcome")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("variant", "0")
+                    .param("reward", "1.0"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void updateExperiment_customer_403() throws Exception {
+            mockMvc.perform(put("/api/analytics/experiments/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"test\",\"type\":\"AB_TEST\",\"variantCount\":3}"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void deactivateExperiment_customer_403() throws Exception {
+            mockMvc.perform(patch("/api/analytics/experiments/1/deactivate")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void rollbackExperiment_customer_403() throws Exception {
+            mockMvc.perform(post("/api/analytics/experiments/1/rollback")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Nested
+    @DisplayName("Audit entity/user endpoints")
+    class AuditDetailTests {
+
+        @Test void auditEntity_customer_403() throws Exception {
+            mockMvc.perform(get("/api/audit/entity/Order/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void auditEntity_staff_403() throws Exception {
+            mockMvc.perform(get("/api/audit/entity/Order/1")
+                    .with(authentication(authFor(Role.STAFF, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void auditEntity_siteManager_200() throws Exception {
+            var order = com.eaglepoint.storehub.entity.Order.builder().id(1L)
+                    .site(Organization.builder().id(10L).name("S").build()).build();
+            when(orderRepository.findById(1L)).thenReturn(java.util.Optional.of(order));
+            when(auditService.getAuditTrail(anyString(), anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/audit/entity/Order/1")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void auditUser_customer_403() throws Exception {
+            mockMvc.perform(get("/api/audit/user/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void auditUser_siteManager_200() throws Exception {
+            var targetUser = User.builder().id(1L).username("u").email("u@t.com")
+                    .passwordHash("x").role(Role.CUSTOMER).enabled(true)
+                    .site(Organization.builder().id(10L).name("S").build()).build();
+            when(userRepository.findById(1L)).thenReturn(java.util.Optional.of(targetUser));
+            when(auditService.getAuditTrailByUser(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/audit/user/1")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("User endpoints")
+    class UserTests {
+
+        @Test void getUsers_customer_403() throws Exception {
+            mockMvc.perform(get("/api/users")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void getUsers_siteManager_200() throws Exception {
+            when(userService.findAllUsers()).thenReturn(List.of());
+            mockMvc.perform(get("/api/users")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getMe_authenticated_200() throws Exception {
+            when(userService.findById(anyLong())).thenReturn(new UserDto());
+            mockMvc.perform(get("/api/users/me")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getUserById_customer_403() throws Exception {
+            mockMvc.perform(get("/api/users/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void reauth_unauthenticated_401() throws Exception {
+            mockMvc.perform(post("/api/users/reauth")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"password\":\"test\"}"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test void reauth_authenticated_200() throws Exception {
+            when(authService.reauthenticate(anyLong(), anyString()))
+                    .thenReturn(new AuthResponse("token", "user", "CUSTOMER", 10L));
+            mockMvc.perform(post("/api/users/reauth")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"password\":\"test\"}"))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Checkin site endpoint")
+    class CheckInSiteTests {
+
+        @Test void getCheckInsBySite_customer_403() throws Exception {
+            mockMvc.perform(get("/api/checkins/site/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("start", "2024-01-01T00:00:00Z")
+                    .param("end", "2024-12-31T23:59:59Z"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void getCheckInsBySite_teamLead_200() throws Exception {
+            when(checkInService.getCheckInsBySite(anyLong(), any(), any())).thenReturn(List.of());
+            mockMvc.perform(get("/api/checkins/site/1")
+                    .with(authentication(authFor(Role.TEAM_LEAD, 10L)))
+                    .param("start", "2024-01-01T00:00:00Z")
+                    .param("end", "2024-12-31T23:59:59Z"))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Order detail endpoints")
+    class OrderDetailTests {
+
+        @Test void getOrderById_unauthenticated_401() throws Exception {
+            mockMvc.perform(get("/api/orders/1"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test void getOrderById_authenticated_200() throws Exception {
+            when(orderService.getOrder(anyLong(), anyLong(), anyString())).thenReturn(new OrderResponse());
+            mockMvc.perform(get("/api/orders/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void verifyPickup_customer_403() throws Exception {
+            mockMvc.perform(post("/api/orders/1/verify-pickup")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("code", "123456"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void verifyPickup_staff_200() throws Exception {
+            when(orderService.verifyPickup(anyLong(), anyString(), anyLong(), anyString())).thenReturn(new OrderResponse());
+            mockMvc.perform(post("/api/orders/1/verify-pickup")
+                    .with(authentication(authFor(Role.STAFF, 10L)))
+                    .param("code", "123456"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void shippingLabel_customer_403() throws Exception {
+            mockMvc.perform(get("/api/orders/1/shipping-label")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void shippingLabel_staff_200() throws Exception {
+            when(shippingLabelService.generateLabel(anyLong())).thenReturn(new byte[]{0x25, 0x50});
+            mockMvc.perform(get("/api/orders/1/shipping-label")
+                    .with(authentication(authFor(Role.STAFF, 10L))))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Ticket detail endpoints")
+    class TicketDetailTests {
+
+        @Test void getTicketById_unauthenticated_401() throws Exception {
+            mockMvc.perform(get("/api/tickets/1"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test void getTicketById_authenticated_200() throws Exception {
+            when(ticketService.getTicket(anyLong(), anyLong(), anyString())).thenReturn(new TicketResponse());
+            mockMvc.perform(get("/api/tickets/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getMyTickets_authenticated_200() throws Exception {
+            when(ticketService.getMyTickets(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/tickets/my")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getTicketsByStatus_customer_403() throws Exception {
+            mockMvc.perform(get("/api/tickets/status/OPEN")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void getTicketsByStatus_staff_200() throws Exception {
+            when(ticketService.getTicketsByStatus(any())).thenReturn(List.of());
+            mockMvc.perform(get("/api/tickets/status/OPEN")
+                    .with(authentication(authFor(Role.STAFF, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void assignTicket_customer_403() throws Exception {
+            mockMvc.perform(patch("/api/tickets/1/assign")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("staffId", "5"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void assignTicket_siteManager_200() throws Exception {
+            when(ticketService.assignTicket(anyLong(), anyLong())).thenReturn(new TicketResponse());
+            mockMvc.perform(patch("/api/tickets/1/assign")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L)))
+                    .param("staffId", "5"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getEvidence_authenticated_200() throws Exception {
+            when(ticketService.getTicket(anyLong(), anyLong(), anyString())).thenReturn(new TicketResponse());
+            when(evidenceService.getEvidenceForTicket(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/tickets/1/evidence")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void verifyEvidence_customer_403() throws Exception {
+            mockMvc.perform(get("/api/tickets/evidence/1/verify")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void verifyEvidence_siteManager_200() throws Exception {
+            when(evidenceService.verifyIntegrity(anyLong())).thenReturn(true);
+            mockMvc.perform(get("/api/tickets/evidence/1/verify")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Rating detail endpoints")
+    class RatingDetailTests {
+
+        @Test void getRatingsForUser_authenticated_200() throws Exception {
+            when(ratingService.getRatingsForUser(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/ratings/user/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getAverageRating_authenticated_200() throws Exception {
+            when(ratingService.getAverageRating(anyLong())).thenReturn(4.5);
+            mockMvc.perform(get("/api/ratings/user/1/average")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getPendingAppeals_customer_403() throws Exception {
+            mockMvc.perform(get("/api/ratings/appeals/pending")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void getPendingAppeals_siteManager_200() throws Exception {
+            when(ratingService.getPendingAppeals()).thenReturn(List.of());
+            mockMvc.perform(get("/api/ratings/appeals/pending")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Community detail endpoints")
+    class CommunityDetailTests {
+
+        @Test void getFeed_authenticated_200() throws Exception {
+            when(communityService.getFeed(anyLong(), any())).thenReturn(new PageImpl<>(List.of()));
+            mockMvc.perform(get("/api/community/posts")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getByTopic_authenticated_200() throws Exception {
+            when(communityService.getFeedByTopic(anyString(), anyLong(), any())).thenReturn(new PageImpl<>(List.of()));
+            mockMvc.perform(get("/api/community/posts/topic/general")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getFollowedFeed_authenticated_200() throws Exception {
+            when(communityService.getFollowedFeed(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/community/posts/following")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void addComment_authenticated_200() throws Exception {
+            when(communityService.addComment(anyLong(), anyLong(), any())).thenReturn(new CommentResponse());
+            mockMvc.perform(post("/api/community/posts/1/comments")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"body\":\"nice post\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getComments_authenticated_200() throws Exception {
+            when(communityService.getComments(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/community/posts/1/comments")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void vote_authenticated_200() throws Exception {
+            when(communityService.vote(anyLong(), anyLong(), any())).thenReturn(new PostResponse());
+            mockMvc.perform(post("/api/community/posts/1/vote")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("type", "UPVOTE"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void followTopic_authenticated_200() throws Exception {
+            mockMvc.perform(post("/api/community/topics/java/follow")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void unfollowTopic_authenticated_204() throws Exception {
+            mockMvc.perform(delete("/api/community/topics/java/follow")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isNoContent());
+        }
+
+        @Test void getFollowedTopics_authenticated_200() throws Exception {
+            when(communityService.getFollowedTopics(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/community/topics/following")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getMyPoints_authenticated_200() throws Exception {
+            when(gamificationService.getProfile(anyLong())).thenReturn(
+                    new PointsProfile(1L, 0, com.eaglepoint.storehub.enums.CommunityLevel.NEWCOMER, 100, "Newcomer"));
+            mockMvc.perform(get("/api/community/points/me")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void toggleFavorite_authenticated_200() throws Exception {
+            when(favoriteService.toggleFavorite(anyLong(), anyLong())).thenReturn(true);
+            mockMvc.perform(post("/api/community/posts/1/favorite")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getFavorites_authenticated_200() throws Exception {
+            when(favoriteService.getFavorites(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/community/favorites")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void followUser_authenticated_200() throws Exception {
+            mockMvc.perform(post("/api/community/users/2/follow")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void unfollowUser_authenticated_204() throws Exception {
+            mockMvc.perform(delete("/api/community/users/2/follow")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isNoContent());
+        }
+
+        @Test void getFollowing_authenticated_200() throws Exception {
+            when(userFollowService.getFollowing(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/community/following")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getPendingQuarantines_customer_403() throws Exception {
+            mockMvc.perform(get("/api/community/quarantine/pending")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void getPendingQuarantines_siteManager_200() throws Exception {
+            when(communityService.getPendingQuarantines()).thenReturn(List.of());
+            mockMvc.perform(get("/api/community/quarantine/pending")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Credit score endpoints")
+    class CreditScoreTests {
+
+        @Test void getOwnCreditScore_authenticated_200() throws Exception {
+            when(creditScoreService.getScore(anyLong())).thenReturn(new CreditScoreDto(1L, 500, 0, 0, 0, 0, "Good"));
+            mockMvc.perform(get("/api/credit-score/me")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getOtherCreditScore_customer_403() throws Exception {
+            mockMvc.perform(get("/api/credit-score/99")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Nested
+    @DisplayName("Address CRUD endpoints")
+    class AddressCrudTests {
+
+        @Test void createAddress_unauthenticated_401() throws Exception {
+            mockMvc.perform(post("/api/addresses")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"label\":\"Home\",\"street\":\"123 Main\",\"city\":\"Town\",\"state\":\"CA\",\"zipCode\":\"90001\"}"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test void createAddress_authenticated_200() throws Exception {
+            when(addressService.create(anyLong(), any())).thenReturn(new AddressDto());
+            mockMvc.perform(post("/api/addresses")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"label\":\"Home\",\"street\":\"123 Main\",\"city\":\"Town\",\"state\":\"CA\",\"zipCode\":\"90001\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void updateAddress_authenticated_200() throws Exception {
+            when(addressService.update(anyLong(), anyLong(), any())).thenReturn(new AddressDto());
+            mockMvc.perform(put("/api/addresses/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"label\":\"Work\",\"street\":\"456 Oak\",\"city\":\"Town\",\"state\":\"CA\",\"zipCode\":\"90002\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void deleteAddress_authenticated_204() throws Exception {
+            mockMvc.perform(delete("/api/addresses/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isNoContent());
+        }
+    }
+
+    @Nested
+    @DisplayName("Delivery zone endpoints")
+    class DeliveryZoneTests {
+
+        @Test void getDeliveryZones_customer_403() throws Exception {
+            mockMvc.perform(get("/api/delivery-zones/site/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void getDeliveryZones_siteManager_200() throws Exception {
+            when(deliveryZoneService.getBySite(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/delivery-zones/site/1")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void createDeliveryZone_customer_403() throws Exception {
+            mockMvc.perform(post("/api/delivery-zones")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("siteId", "1").param("zipCode", "90001")
+                    .param("distanceMiles", "3.0").param("deliveryFee", "4.99"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void deleteDeliveryZone_siteManager_403() throws Exception {
+            // DELETE requires ENTERPRISE_ADMIN only
+            mockMvc.perform(delete("/api/delivery-zones/1")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Nested
+    @DisplayName("Delivery zone group endpoints")
+    class DeliveryZoneGroupTests {
+
+        @Test void getZoneGroups_customer_403() throws Exception {
+            mockMvc.perform(get("/api/delivery-zone-groups/site/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void getZoneGroups_siteManager_200() throws Exception {
+            when(deliveryZoneGroupService.getBySite(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/delivery-zone-groups/site/1")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void createZoneGroup_customer_403() throws Exception {
+            mockMvc.perform(post("/api/delivery-zone-groups")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("siteId", "1").param("name", "Metro"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void deactivateZoneGroup_customer_403() throws Exception {
+            mockMvc.perform(patch("/api/delivery-zone-groups/1/deactivate")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Nested
+    @DisplayName("Organization endpoints")
+    class OrganizationTests {
+
+        @Test void getOrganizations_customer_403() throws Exception {
+            mockMvc.perform(get("/api/organizations")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void getOrganizations_staff_200() throws Exception {
+            when(organizationService.findAll()).thenReturn(List.of());
+            mockMvc.perform(get("/api/organizations")
+                    .with(authentication(authFor(Role.STAFF, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getByLevel_staff_200() throws Exception {
+            when(organizationService.findByLevel(any())).thenReturn(List.of());
+            mockMvc.perform(get("/api/organizations/level/SITE")
+                    .with(authentication(authFor(Role.STAFF, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void getChildren_staff_200() throws Exception {
+            when(organizationService.findChildren(anyLong())).thenReturn(List.of());
+            mockMvc.perform(get("/api/organizations/1/children")
+                    .with(authentication(authFor(Role.STAFF, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void createOrganization_staff_403() throws Exception {
+            mockMvc.perform(post("/api/organizations")
+                    .with(authentication(authFor(Role.STAFF, 10L)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"New Site\",\"level\":\"SITE\"}"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void createOrganization_admin_200() throws Exception {
+            when(organizationService.create(any())).thenReturn(new OrganizationDto());
+            mockMvc.perform(post("/api/organizations")
+                    .with(authentication(authFor(Role.ENTERPRISE_ADMIN, null)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"New Site\",\"level\":\"SITE\"}"))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Incentive rule mutation endpoints")
+    class IncentiveRuleMutationTests {
+
+        @Test void updateRule_siteManager_403() throws Exception {
+            mockMvc.perform(put("/api/admin/incentive-rules/POST_CREATED")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L)))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"points\":10}"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void toggleRule_siteManager_403() throws Exception {
+            mockMvc.perform(patch("/api/admin/incentive-rules/POST_CREATED/toggle")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  REMAINING COVERAGE — last 10 uncovered endpoints
+    // ════════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("Auth public endpoints")
+    class AuthTests {
+
+        @Test void login_public_200() throws Exception {
+            when(authService.login(any())).thenReturn(new AuthResponse("tok", "admin", "ENTERPRISE_ADMIN", null));
+            mockMvc.perform(post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"username\":\"admin\",\"password\":\"Dev!Storehub99\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void register_public_200() throws Exception {
+            when(authService.register(any())).thenReturn(new AuthResponse("tok", "newuser", "CUSTOMER", null));
+            mockMvc.perform(post("/api/auth/register")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"username\":\"newuser\",\"password\":\"StrongP@ss1\",\"email\":\"new@test.com\"}"))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Fraud alert resolve endpoint")
+    class FraudAlertResolveTests {
+
+        @Test void resolveFraudAlert_customer_403() throws Exception {
+            mockMvc.perform(patch("/api/checkins/fraud-alerts/1/resolve")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("note", "Resolved after review of evidence"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void resolveFraudAlert_siteManager_200() throws Exception {
+            when(checkInService.resolveFraudAlert(anyLong(), anyLong(), anyString()))
+                    .thenReturn(com.eaglepoint.storehub.entity.FraudAlert.builder().id(1L).resolved(true).build());
+            mockMvc.perform(patch("/api/checkins/fraud-alerts/1/resolve")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L)))
+                    .param("note", "Resolved after review of evidence"))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Community points by userId endpoint")
+    class CommunityPointsByUserIdTests {
+
+        @Test void getPointsByUserId_authenticated_200() throws Exception {
+            // Request own points (userId matches principal.id) — no extra auth check
+            when(gamificationService.getProfile(anyLong())).thenReturn(
+                    new PointsProfile(1L, 50, com.eaglepoint.storehub.enums.CommunityLevel.NEWCOMER, 50, "Newcomer"));
+            mockMvc.perform(get("/api/community/points/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Delivery zone update endpoint")
+    class DeliveryZoneUpdateTests {
+
+        @Test void updateDeliveryZone_customer_403() throws Exception {
+            mockMvc.perform(put("/api/delivery-zones/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("zipCode", "90001")
+                    .param("distanceMiles", "3.0")
+                    .param("deliveryFee", "4.99")
+                    .param("active", "true"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void updateDeliveryZone_siteManager_200() throws Exception {
+            com.eaglepoint.storehub.entity.DeliveryZone zone = com.eaglepoint.storehub.entity.DeliveryZone.builder()
+                    .id(1L).site(Organization.builder().id(10L).name("S").build())
+                    .zipCode("90001").distanceMiles(3.0).active(true).build();
+            when(deliveryZoneService.getById(1L)).thenReturn(zone);
+            when(deliveryZoneService.update(anyLong(), anyString(), anyDouble(), any(), anyBoolean())).thenReturn(zone);
+            mockMvc.perform(put("/api/delivery-zones/1")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L)))
+                    .param("zipCode", "90001")
+                    .param("distanceMiles", "3.0")
+                    .param("deliveryFee", "4.99")
+                    .param("active", "true"))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Delivery zone group ZIP and band CRUD endpoints")
+    class DeliveryZoneGroupCrudTests {
+
+        private com.eaglepoint.storehub.entity.DeliveryZoneGroup mockGroup() {
+            return com.eaglepoint.storehub.entity.DeliveryZoneGroup.builder()
+                    .id(1L).site(Organization.builder().id(10L).name("S").build())
+                    .name("Metro").active(true).build();
+        }
+
+        @Test void addZipCode_customer_403() throws Exception {
+            mockMvc.perform(post("/api/delivery-zone-groups/1/zips")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("zipCode", "90001")
+                    .param("distanceMiles", "3.0"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void addZipCode_siteManager_200() throws Exception {
+            var group = mockGroup();
+            when(deliveryZoneGroupService.getById(1L)).thenReturn(group);
+            when(deliveryZoneGroupService.addZipCode(anyLong(), anyString(), anyDouble())).thenReturn(group);
+            mockMvc.perform(post("/api/delivery-zone-groups/1/zips")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L)))
+                    .param("zipCode", "90001")
+                    .param("distanceMiles", "3.0"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void removeZipCode_customer_403() throws Exception {
+            mockMvc.perform(delete("/api/delivery-zone-groups/1/zips/90001")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void removeZipCode_siteManager_200() throws Exception {
+            var group = mockGroup();
+            when(deliveryZoneGroupService.getById(1L)).thenReturn(group);
+            when(deliveryZoneGroupService.removeZipCode(anyLong(), anyString())).thenReturn(group);
+            mockMvc.perform(delete("/api/delivery-zone-groups/1/zips/90001")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void addBand_customer_403() throws Exception {
+            mockMvc.perform(post("/api/delivery-zone-groups/1/bands")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L)))
+                    .param("minMiles", "0")
+                    .param("maxMiles", "5")
+                    .param("fee", "4.99"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void addBand_siteManager_200() throws Exception {
+            var group = mockGroup();
+            when(deliveryZoneGroupService.getById(1L)).thenReturn(group);
+            when(deliveryZoneGroupService.addDistanceBand(anyLong(), anyDouble(), anyDouble(), any())).thenReturn(group);
+            mockMvc.perform(post("/api/delivery-zone-groups/1/bands")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L)))
+                    .param("minMiles", "0")
+                    .param("maxMiles", "5")
+                    .param("fee", "4.99"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test void removeBand_customer_403() throws Exception {
+            mockMvc.perform(delete("/api/delivery-zone-groups/1/bands/1")
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test void removeBand_siteManager_200() throws Exception {
+            var group = mockGroup();
+            when(deliveryZoneGroupService.getById(1L)).thenReturn(group);
+            when(deliveryZoneGroupService.removeBand(anyLong(), anyLong())).thenReturn(group);
+            mockMvc.perform(delete("/api/delivery-zone-groups/1/bands/1")
+                    .with(authentication(authFor(Role.SITE_MANAGER, 10L))))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("Ticket evidence upload endpoint")
+    class TicketEvidenceUploadTests {
+
+        @Test void uploadEvidence_unauthenticated_401() throws Exception {
+            mockMvc.perform(multipart("/api/tickets/1/evidence")
+                    .file(new org.springframework.mock.web.MockMultipartFile(
+                            "file", "receipt.pdf", "application/pdf", new byte[]{0x25, 0x50})))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test void uploadEvidence_authenticated_200() throws Exception {
+            when(evidenceService.uploadEvidence(anyLong(), anyLong(), any()))
+                    .thenReturn(new EvidenceDto());
+            mockMvc.perform(multipart("/api/tickets/1/evidence")
+                    .file(new org.springframework.mock.web.MockMultipartFile(
+                            "file", "receipt.pdf", "application/pdf", new byte[]{0x25, 0x50}))
+                    .with(authentication(authFor(Role.CUSTOMER, 10L))))
+                    .andExpect(status().isOk());
         }
     }
 

@@ -34,7 +34,7 @@ public class EvidenceFile {
     @Column(nullable = false)
     private String storagePath;
 
-    @Column(nullable = false, length = 64)
+    @Column(name = "sha256_hash", nullable = false, length = 64)
     private String sha256Hash;
 
     @Column(nullable = false, updatable = false)

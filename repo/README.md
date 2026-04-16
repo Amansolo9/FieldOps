@@ -1,6 +1,91 @@
 # StoreHub Platform
 
+> **Project type:** Fullstack (Spring Boot backend + Angular frontend + PostgreSQL)
+
 Multi-location retail operations platform built with Spring Boot 3.2 and Angular 17.
+
+## Prerequisites
+
+- **Docker** and **Docker Compose** (only requirement)
+
+## Quick Start
+
+```bash
+docker-compose up
+```
+
+- Frontend: [http://localhost:4200](http://localhost:4200)
+- API: [http://localhost:8080](http://localhost:8080)
+
+The docker-compose defaults provide all secrets, database, and bootstrap credentials out of the box. No `.env` file, manual database creation, or local tool installation is needed for evaluation.
+
+### Demo Credentials
+
+On first startup the bootstrap service creates an initial ENTERPRISE_ADMIN. Use that account to create users for the remaining roles via `PATCH /api/users/{id}/role`.
+
+| Role | Username | Password | Notes |
+|---|---|---|---|
+| ENTERPRISE_ADMIN | `admin` | `Dev!Storehub99` | Auto-created by bootstrap on first startup |
+| SITE_MANAGER | `sitemanager` | `SiteMgr!2026` | Register via POST /api/auth/register, then promote via admin |
+| TEAM_LEAD | `teamlead` | `TeamLead!2026` | Register then promote |
+| STAFF | `staffuser` | `StaffUser!2026` | Register then promote |
+| CUSTOMER | `customer` | `Customer!2026` | Register (default role is CUSTOMER) |
+
+**Quick setup for all roles (after `docker-compose up`):**
+
+```bash
+# 1. Login as admin
+ADMIN_TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"Dev!Storehub99"}' | jq -r '.token')
+
+# 2. Register other users (each gets CUSTOMER role by default)
+for u in sitemanager:SiteMgr!2026:sm@storehub.local \
+         teamlead:TeamLead!2026:tl@storehub.local \
+         staffuser:StaffUser!2026:st@storehub.local \
+         customer:Customer!2026:cu@storehub.local; do
+  IFS=: read -r user pass email <<< "$u"
+  curl -s -X POST http://localhost:8080/api/auth/register \
+    -H 'Content-Type: application/json' \
+    -d "{\"username\":\"$user\",\"password\":\"$pass\",\"email\":\"$email\"}" > /dev/null
+done
+
+# 3. Promote roles (admin must re-auth first for privileged action)
+ADMIN_TOKEN=$(curl -s -X POST http://localhost:8080/api/users/reauth \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"password":"Dev!Storehub99"}' | jq -r '.token')
+
+# Get user IDs and promote
+for role_pair in sitemanager:SITE_MANAGER teamlead:TEAM_LEAD staffuser:STAFF; do
+  IFS=: read -r user role <<< "$role_pair"
+  USER_ID=$(curl -s http://localhost:8080/api/users \
+    -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r ".[] | select(.username==\"$user\") | .id")
+  curl -s -X PATCH "http://localhost:8080/api/users/$USER_ID/role?role=$role" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" > /dev/null
+done
+
+echo "All demo users created and promoted."
+```
+
+### Verification
+
+After running `docker-compose up`, verify the system is working:
+
+```bash
+# 1. Health check — backend responds
+curl -sf http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"Dev!Storehub99"}' \
+  | jq '.token' && echo "PASS: Backend auth works"
+
+# 2. Frontend serves — HTTP 200
+curl -sf -o /dev/null -w "%{http_code}" http://localhost:4200 \
+  | grep -q 200 && echo "PASS: Frontend serves"
+
+# 3. Full login flow — open browser
+echo "Open http://localhost:4200 and log in as admin / Dev!Storehub99"
+```
 
 ## Architecture
 
@@ -16,75 +101,13 @@ Multi-location retail operations platform built with Spring Boot 3.2 and Angular
 - Angular 17 standalone components with Signals
 - nginx reverse proxy
 
-## Prerequisites
+## Environment Variables (Production Override)
 
-Either:
-
-- **Docker** and **Docker Compose** (recommended)
-
-Or all of the following installed locally:
-
-- Java 17
-- Maven 3.9+
-- Node 20
-- PostgreSQL 16
-
-## Quick Start (Docker)
-
-```bash
-cp .env.example .env
-# Edit .env and set real secrets for DB_PASSWORD, JWT_SECRET, and AES_KEY
-docker compose up --build
-```
-
-- Frontend: [http://localhost:4200](http://localhost:4200)
-- API: [http://localhost:8080](http://localhost:8080)
-
-### First-Time Admin Bootstrap
-
-On a fresh deployment with an empty database, the system needs an initial enterprise admin.
-
-1. Set these environment variables in your `.env`:
-   ```
-   BOOTSTRAP_ADMIN_USERNAME=admin
-   BOOTSTRAP_ADMIN_PASSWORD=Str0ng!P@ssword
-   BOOTSTRAP_ADMIN_EMAIL=admin@storehub.local
-   ```
-2. Start the application — the admin will be created automatically on first startup.
-3. Log in with the bootstrap credentials.
-4. **Remove the bootstrap variables** from your `.env` after first login.
-
-The bootstrap is a one-time operation: if any ENTERPRISE_ADMIN already exists, it is skipped.
-
-## Quick Start (Manual)
-
-1. Start PostgreSQL and create the `storehub` database:
-   ```sql
-   CREATE DATABASE storehub;
-   ```
-
-2. Set environment variables from `.env.example` (export each var or use your IDE's run configuration).
-
-3. Start the backend:
-   ```bash
-   cd backend && mvn spring-boot:run
-   ```
-
-4. Start the frontend:
-   ```bash
-   cd frontend && npm install && npx ng serve --proxy-config proxy.conf.json
-   ```
-
-## Environment Variables
-
-1. Copy `.env.example` to `.env` and fill in real values.
-2. **NEVER** commit `.env` to version control.
-3. Generate `JWT_SECRET` with: `openssl rand -base64 32`
-4. Generate `AES_KEY` with: `openssl rand -hex 32`
+For production deployments, copy `.env.example` to `.env` and set real secrets. For local evaluation, the docker-compose defaults work without any `.env` file.
 
 | Variable | Description |
 |---|---|
-| `DB_HOST` | PostgreSQL hostname (default `db` for Docker, `localhost` for manual) |
+| `DB_HOST` | PostgreSQL hostname (default `db`) |
 | `DB_USERNAME` | Database user |
 | `DB_PASSWORD` | Database password |
 | `JWT_SECRET` | Base64-encoded 256-bit key used to sign JWTs |
@@ -96,17 +119,11 @@ The bootstrap is a one-time operation: if any ENTERPRISE_ADMIN already exists, i
 
 ## Running Tests
 
-**Backend**
-
 ```bash
-cd backend && mvn test
+./run_tests.sh
 ```
 
-**Frontend**
-
-```bash
-cd frontend && npx ng test
-```
+This runs backend and frontend tests inside Docker containers. No local Maven, Node, or Java installation required.
 
 ## Project Structure
 
@@ -385,16 +402,13 @@ frontend/
 
 ## Remediation Notes
 
-### Required Environment Variables
+### Environment Variables (Production Only)
 
-Docker Compose requires a `.env` file. Copy from `.env.example`:
-```bash
-cp .env.example .env
-# Edit .env and set real values for ALL required variables
-```
+For local evaluation, `docker-compose up` works out of the box with built-in defaults. No `.env` file is needed.
 
-Required: `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `AES_KEY`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`.
-Optional: `BOOTSTRAP_ADMIN_USERNAME/PASSWORD/EMAIL` (for first-admin provisioning).
+For production deployments, copy `.env.example` to `.env` and override secrets:
+- `DB_PASSWORD`, `JWT_SECRET`, `AES_KEY`, `POSTGRES_PASSWORD` (required for production)
+- `BOOTSTRAP_ADMIN_USERNAME/PASSWORD/EMAIL` (optional, for first-admin provisioning)
 
 ### Delivery Zone Configuration
 
@@ -485,7 +499,28 @@ Every controller endpoint has an explicit method-level authorization annotation:
 
 ### Authorization Test Coverage
 
-**MockMvc HTTP integration tests** (`MockMvcAuthorizationTest`) exercise the real Spring Security filter chain:
+**True no-mock integration tests** (`FullStackIntegrationTest`) use `@SpringBootTest` + Testcontainers PostgreSQL:
+- Full app boot with real service graph, real DB, real Flyway migrations
+- HTTP requests via `TestRestTemplate` against a random port
+- Covers: auth login/register, password policy enforcement, role promotion, organization CRUD, order lifecycle (create → retrieve → verify), community posts/feed/gamification, ratings, support tickets, address CRUD, credit score, experiment bucketing, analytics events, re-auth flow
+- Deep response-body assertions (field values, business state, not just status codes)
+- Requires Docker for Testcontainers (automatically pulls postgres:16-alpine)
+
+**Business-flow integration tests** (`BusinessFlowIntegrationTest`) — also `@SpringBootTest` + Testcontainers:
+- Multi-step business scenarios: community engagement (post → vote → comment → follow → unfollow → favorite → points), order lifecycle (create → confirm → ready → pickup-verify → reuse-blocked → customer-self-redeem-blocked), ticket lifecycle (create → assign → status update), rating + appeal (rate → appeal → resolve), delivery zone configuration (group → ZIP → band), audit trail, analytics events + metrics, shipping label generation
+- Deep state assertions: field values, status transitions, counters, timestamps, business invariants
+
+**Cypress FE↔BE end-to-end tests** (`e2e/cypress/e2e/`) — real browser against real full stack:
+- Authentication flow: login page, bad credentials error, successful login → dashboard, logout
+- Dashboard: welcome card, navigation links, role badge, admin-only nav items
+- Orders: create form, place pickup order, order appears in list
+- Community: create post in feed, vote, toggle comments, follow topic, author follow button, points dashboard
+- Tickets: ticket creation form, ticket list
+- Navigation: all pages reachable, customer cannot access admin/analytics pages (role guard redirect)
+- Run via: `docker-compose -f docker-compose.e2e.yml up --abort-on-container-exit --exit-code-from cypress`
+
+**MockMvc HTTP authorization tests** (`MockMvcAuthorizationTest`) exercise the Spring Security filter chain with mocked services:
+- 91/91 endpoints covered (100% route-level auth verification)
 - Unauthenticated requests → 401 (orders, check-ins, tickets, ratings, audit, admin, community, addresses)
 - Wrong role → 403 (CUSTOMER can't check-in, can't update order status, can't access audit, etc.)
 - Correct role → success (CUSTOMER creates orders, STAFF checks in, ENTERPRISE_ADMIN manages users)
@@ -595,12 +630,11 @@ All authorization tests use contract-accurate payloads matching actual DTO field
 ### Running All Tests
 
 ```bash
-# Backend tests (includes all authorization, idempotency, scope, and experiment tests)
-cd backend && mvn test
-
-# Frontend tests (includes community follow, reauth, and interceptor tests)
-cd frontend && npx ng test
-
-# Full test suite (backend + frontend + static checks)
+# Full test suite via Docker — backend, frontend, e2e (recommended)
 ./run_tests.sh
+
+# Or run specific tiers:
+docker run --rm -v "$(pwd)/backend":/app -v /var/run/docker.sock:/var/run/docker.sock -w /app maven:3.9-eclipse-temurin-17 mvn test -B
+docker run --rm -v "$(pwd)/frontend":/app -w /app node:20-alpine sh -c "npm ci && npx ng test --watch=false"
+docker-compose -f docker-compose.e2e.yml up --build --abort-on-container-exit --exit-code-from cypress
 ```
